@@ -59,6 +59,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private ToneGenerator toneGen;
     private HistoryDb hist;
     private TextView btnHist;
+    private TextView btnAbout;
     private final HashMap<String, TextView> keyViews = new HashMap<>();
     private LinearLayout keypad;
     private TextView btnSound;
@@ -151,6 +152,16 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             topBar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
 
+        btnAbout = new TextView(this);
+        btnAbout.setText("关于");
+        btnAbout.setTag("ABOUT");
+        btnAbout.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnAbout.setPadding(dp(12), dp(7), dp(12), dp(7));
+        btnAbout.setBackgroundResource(R.drawable.bg_key);
+        btnAbout.setTextColor(0xFF37F5D8);
+        btnAbout.setClickable(true);
+        btnAbout.setOnClickListener(this);
+
         btnHist = new TextView(this);
         btnHist.setText("记录");
         btnHist.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -163,7 +174,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hlp.rightMargin = dp(8);
-        if (topBar != null) topBar.addView(btnHist, hlp);
+        if (topBar != null) {
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            alp.rightMargin = dp(8);
+            topBar.addView(btnAbout, alp);
+            topBar.addView(btnHist, hlp);
+        }
 
         btnSound = new TextView(this);
         btnSound.setTag("SOUND");
@@ -340,6 +357,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             keyLp.rightMargin = dp(5);
             attrKeyStyle(btnHist);
             attrKeyStyle(btnSound);
+            attrKeyStyle(btnAbout);
+            LinearLayout.LayoutParams abLp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0.55f);
+            abLp.leftMargin = dp(5);
+            abLp.rightMargin = dp(5);
+            bottomRow.addView(btnAbout, abLp);
             bottomRow.addView(btnHist, keyLp);
             LinearLayout.LayoutParams keyLp2 = new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.MATCH_PARENT, 0.55f);
@@ -508,6 +531,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     public void onClick(View v) {
         String k = (String) v.getTag();
         if (k == null) return;
+        if ("ABOUT".equals(k)) {
+            showAbout();
+            return;
+        }
         if ("HIST".equals(k)) {
             showHistory();
             return;
@@ -659,6 +686,56 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             setResultText(operand);
         }
         tvExpr.setText(pretty(s));
+    }
+
+    private void showAbout() {
+        ScrollView sv = new ScrollView(this);
+        TextView tv = new TextView(this);
+        tv.setPadding(dp(18), dp(10), dp(18), dp(10));
+        tv.setTextColor(0xFFCFE9E4);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        tv.setLineSpacing(dp(3), 1f);
+        tv.setText(
+                "语音计算器  v" + versionName() + "\n\n"
+                + "一个完全离线的中文语音计算器。说「三十二加五十八」就能算出结果，"
+                + "识别全部在本机完成，不上传任何语音，也不需要联网。\n\n"
+                + "主要功能\n"
+                + "· 离线语音识别：说完停顿即自动计算并朗读结果\n"
+                + "· 连续计算：出结果后按数字＝新算，按运算符＝接着算\n"
+                + "· 计算记录：自动保存最近 30 天，可点击回填\n"
+                + "· 横竖屏自适应：横屏左右手分工，单手也好按\n"
+                + "· 外接键盘：USB / 蓝牙键盘按键映射，屏幕同步高亮\n"
+                + "· 按键人声可开关，设置自动记忆\n\n"
+                + "技术说明\n"
+                + "界面为原生 Android 实现；语音识别使用开源的 Vosk 引擎与中文小模型，"
+                + "全部离线运行。\n\n"
+                + "免责声明\n"
+                + "1. 本软件完全免费，不以任何形式收费，也不收集、上传或出售用户数据。\n"
+                + "2. 软件按「现状」提供，不对计算或识别结果的准确性作任何担保。"
+                + "因使用本软件造成的任何直接或间接损失，由使用者自行承担。\n"
+                + "3. 软件中涉及的第三方组件（包括但不限于 Vosk 语音识别引擎及其声学模型），"
+                + "版权归各自作者所有，遵循其原有的开源许可协议。\n"
+                + "4. 若本软件的任何内容侵犯了您的版权或其他协议权益，请通过下方邮箱联系我们，"
+                + "我们会在核实后立即删除或修正。\n\n"
+                + "联系方式\n"
+                + "邮箱：Zhaozhuok@vip.qq.com\n\n"
+                + "开源地址\n"
+                + "github.com/zhaozhuok-bit/voicecalc");
+        sv.addView(tv);
+
+        new AlertDialog.Builder(this)
+                .setTitle("关于 / 免责声明")
+                .setView(sv)
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "3.8";
+        }
     }
 
     private void showHistory() {
