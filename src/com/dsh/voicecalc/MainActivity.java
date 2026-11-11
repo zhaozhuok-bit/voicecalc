@@ -1,0 +1,1154 @@
+package com.dsh.voicecalc;
+
+import android.Manifest;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+
+import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ComponentName;
+import android.content.res.Configuration;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Build;
+import android.os.Bundle;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Locale;
+
+public class MainActivity extends Activity implements View.OnClickListener, RecognitionListener {
+
+    private TextView tvExpr, tvResult, tvStatus, btnMic, tvPrev;
+    private SpeechRecognizer recognizer;
+    private Intent recIntent;
+    private TextToSpeech tts;
+    private boolean listening;
+    private String recService = "";
+
+    private org.vosk.Model vModel;
+    private org.vosk.Recognizer vRec;
+    private AudioRecord vAudio;
+    private volatile boolean vListening;
+    private volatile String vPartial = "";
+    private static final String GRAMMAR = "[\"零\",\"一\",\"二\",\"三\",\"四\",\"五\",\"六\",\"七\",\"八\",\"九\",\"十\",\"百\",\"千\",\"万\",\"亿\",\"点\",\"加\",\"减\",\"乘\",\"除\",\"以\",\"等\",\"于\",\"多\",\"少\",\"负\",\"分\",\"之\",\"的\"]";
+    private final StringBuilder input = new StringBuilder();
+    private boolean justEvaluated = false;
+    private final java.util.ArrayList<String> recentCalcs = new java.util.ArrayList<>();
+    private float density;
+    private ToneGenerator toneGen;
+    private HistoryDb hist;
+    private TextView btnHist;
+    private final HashMap<String, TextView> keyViews = new HashMap<>();
+    private LinearLayout keypad;
+    private TextView btnSound;
+    private boolean soundOn = true;
+
+    private static final String PREF = "voicecalc";
+    private static final int REQ_AUDIO = 7;
+
+    @Override
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
+        soundOn = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("sound", true);
+        density = getResources().getDisplayMetrics().density;
+        setContentView(buildUi());
+        updateSoundUi();
+        hist = new HistoryDb(this);
+        hist.prune();
+        initTts();
+        initTone();
+    }
+
+    private void initTone() {
+        try {
+            toneGen = new ToneGenerator(AudioManager.STREAM_MUSIC, 75);
+        } catch (Throwable ignored) {
+            toneGen = null;
+        }
+    }
+
+    /** 按键人声：数字读成中文数字，符号读名称；关掉开关就完全安静 */
+    private void speakKey(String label) {
+        if (!soundOn || tts == null || label == null || label.isEmpty()) return;
+        String say;
+        char c = label.charAt(0);
+        if (label.length() == 1 && c >= '0' && c <= '9') {
+            say = String.valueOf("零一二三四五六七八九".charAt(c - '0'));
+        } else {
+            switch (label) {
+                case ".": say = "点"; break;
+                case "+": say = "加"; break;
+                case "−": say = "减"; break;
+                case "×": say = "乘"; break;
+                case "÷": say = "除"; break;
+                case "%": say = "百分号"; break;
+                case "C": say = "清空"; break;
+                case "⌫": say = "退格"; break;
+                default: return;
+            }
+        }
+        try {
+            tts.speak(say, TextToSpeech.QUEUE_FLUSH, null, "k");
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void updateSoundUi() {
+        if (btnSound == null) return;
+        boolean land = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        btnSound.setText(land ? (soundOn ? "人声" : "静音")
+                : (soundOn ? "🔊 人声：开" : "🔇 人声：关"));
+        btnSound.setTextColor(soundOn ? 0xFF3BE0C8 : 0xFF8A8AA3);
+    }
+
+    private int dp(float v) {
+        return (int) (v * density + 0.5f);
+    }
+
+    private View buildUi() {
+        boolean land = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(land ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF05080D);
+        root.setPadding(dp(16), dp(16), dp(16), dp(12));
+
+        // 顶栏（仅竖屏；横屏不要标题）
+        LinearLayout topBar = null;
+        if (!land) {
+            topBar = new LinearLayout(this);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView title = new TextView(this);
+            title.setText("语音计算器");
+            title.setTextColor(0xFF3E6570);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            title.setLetterSpacing(0.12f);
+            topBar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+
+        btnHist = new TextView(this);
+        btnHist.setText("记录");
+        btnHist.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnHist.setPadding(dp(12), dp(7), dp(12), dp(7));
+        btnHist.setBackgroundResource(R.drawable.bg_key);
+        btnHist.setTextColor(0xFF37F5D8);
+        btnHist.setClickable(true);
+        btnHist.setTag("HIST");
+        btnHist.setOnClickListener(this);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hlp.rightMargin = dp(8);
+        if (topBar != null) topBar.addView(btnHist, hlp);
+
+        btnSound = new TextView(this);
+        btnSound.setTag("SOUND");
+        btnSound.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnSound.setPadding(dp(12), dp(7), dp(12), dp(7));
+        btnSound.setBackgroundResource(R.drawable.bg_key);
+        btnSound.setClickable(true);
+        btnSound.setOnClickListener(this);
+        if (topBar != null) {
+            topBar.addView(btnSound, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        // 显示屏
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        card.setBackgroundResource(R.drawable.bg_display);
+        card.setPadding(dp(20), dp(land ? 10 : 16), dp(20), dp(land ? 10 : 16));
+
+        tvPrev = new TextView(this);
+        tvPrev.setTextColor(0xFF3E6570);
+        tvPrev.setTextSize(TypedValue.COMPLEX_UNIT_SP, land ? 10 : 12);
+        tvPrev.setGravity(Gravity.END);
+        tvPrev.setSingleLine(true);
+        tvPrev.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        tvPrev.setPadding(0, 0, 0, dp(2));
+        card.addView(tvPrev, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        tvExpr = new TextView(this);
+        tvExpr.setTextColor(0xFFBFEFE7);
+        tvExpr.setTextSize(TypedValue.COMPLEX_UNIT_SP, land ? 20 : 28);
+        tvExpr.setGravity(Gravity.END);
+        tvExpr.setSingleLine(true);
+        tvExpr.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        card.addView(tvExpr, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        tvResult = new TextView(this);
+        tvResult.setText("0");
+        tvResult.setTextColor(0xFFFFFFFF);
+        tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, land ? 34 : 50);
+        tvResult.setTypeface(Typeface.DEFAULT_BOLD);
+        tvResult.setGravity(Gravity.END);
+        tvResult.setSingleLine(true);
+        tvResult.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tvResult.setPadding(0, dp(6), 0, 0);
+        card.addView(tvResult, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 麦克风
+        btnMic = new TextView(this);
+        btnMic.setText("🎤  说话算一算");
+        btnMic.setTextColor(0xFFFFFFFF);
+        btnMic.setTextSize(TypedValue.COMPLEX_UNIT_SP, land ? 15 : 19);
+        btnMic.setTypeface(Typeface.DEFAULT_BOLD);
+        btnMic.setGravity(Gravity.CENTER);
+        btnMic.setBackgroundResource(R.drawable.bg_mic);
+        btnMic.setClickable(true);
+        btnMic.setOnClickListener(this);
+        btnMic.setTag("MIC");
+        LinearLayout.LayoutParams micLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(land ? 54 : 62));
+        micLp.topMargin = dp(10);
+
+        // 状态
+        tvStatus = new TextView(this);
+        tvStatus.setText("例：三十二加五十八 · 十五乘以四 · 百分之二十");
+        tvStatus.setTextColor(0xFF3E6570);
+        tvStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvStatus.setGravity(Gravity.CENTER);
+        tvStatus.setSingleLine(true);
+        tvStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        stLp.topMargin = dp(8);
+
+        LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        topLp.bottomMargin = dp(10);
+
+        if (!land) {
+            // 竖屏：一个完整键盘
+            LinearLayout pad = new LinearLayout(this);
+            pad.setOrientation(LinearLayout.VERTICAL);
+            String[][] rows = {
+                    {"C", "⌫", "%", "÷"},
+                    {"7", "8", "9", "×"},
+                    {"4", "5", "6", "−"},
+                    {"1", "2", "3", "+"}
+            };
+            for (String[] r : rows) {
+                LinearLayout row = newRow();
+                for (String k : r) addKey(row, k, 1f);
+                pad.addView(row, rowLp());
+            }
+            LinearLayout lastRow = newRow();
+            addKey(lastRow, "0", 1f);
+            addKey(lastRow, ".", 1f);
+            addKey(lastRow, "=", 2f);
+            pad.addView(lastRow, rowLp());
+
+            root.addView(topBar, topLp);
+            root.addView(card, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams kpLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+            kpLp.topMargin = dp(10);
+            root.addView(pad, kpLp);
+            root.addView(btnMic, micLp);
+            root.addView(tvStatus, stLp);
+        } else {
+            // 横屏：左＝数字框 + 运算键；右＝数字 + 底行(退格/百分号/语音)
+            LinearLayout left = new LinearLayout(this);
+            left.setOrientation(LinearLayout.VERTICAL);
+            left.addView(card, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            LinearLayout opsGrid = new LinearLayout(this);
+            opsGrid.setOrientation(LinearLayout.HORIZONTAL);
+
+            // 左列：清空 在上，大 + 在下
+            LinearLayout col1 = new LinearLayout(this);
+            col1.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout rowC = newRow();
+            addKey(rowC, "C", 1f);
+            col1.addView(rowC, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            LinearLayout rowPlus = newRow();
+            addKey(rowPlus, "+", 1f);
+            col1.addView(rowPlus, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f));
+
+            // 右列：减 乘 除
+            LinearLayout col2 = new LinearLayout(this);
+            col2.setOrientation(LinearLayout.VERTICAL);
+            String[] ops = {"−", "×", "÷"};
+            for (String op : ops) {
+                LinearLayout r = newRow();
+                addKey(r, op, 1f);
+                col2.addView(r, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            }
+
+            opsGrid.addView(col1, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+            opsGrid.addView(col2, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+            LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+            gridLp.topMargin = dp(10);
+            left.addView(opsGrid, gridLp);
+
+            // 右列：数字 + 底部一行
+            LinearLayout right = new LinearLayout(this);
+            right.setOrientation(LinearLayout.VERTICAL);
+
+            LinearLayout numPad = new LinearLayout(this);
+            numPad.setOrientation(LinearLayout.VERTICAL);
+            String[][] nums = {{"7", "8", "9"}, {"4", "5", "6"}, {"1", "2", "3"}, {"0", ".", "="}};
+            for (String[] rowKeys : nums) {
+                LinearLayout row = newRow();
+                for (String k : rowKeys) addKey(row, k, 1f);
+                numPad.addView(row, rowLp());
+            }
+            right.addView(numPad, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+            LinearLayout bottomRow = newRow();
+            LinearLayout.LayoutParams keyLp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0.55f);
+            keyLp.leftMargin = dp(5);
+            keyLp.rightMargin = dp(5);
+            attrKeyStyle(btnHist);
+            attrKeyStyle(btnSound);
+            bottomRow.addView(btnHist, keyLp);
+            LinearLayout.LayoutParams keyLp2 = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0.55f);
+            keyLp2.leftMargin = dp(5);
+            keyLp2.rightMargin = dp(5);
+            bottomRow.addView(btnSound, keyLp2);
+            addKey(bottomRow, "⌫", 0.95f);
+            addKey(bottomRow, "%", 0.9f);
+
+            btnMic.setText("🎤 说话");
+            LinearLayout.LayoutParams micLp2 = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1.7f);
+            micLp2.leftMargin = dp(5);
+            micLp2.rightMargin = dp(5);
+            bottomRow.addView(btnMic, micLp2);
+
+            LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
+            brLp.topMargin = dp(8);
+            right.addView(bottomRow, brLp);
+
+            LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+            leftLp.rightMargin = dp(12);
+            root.addView(left, leftLp);
+            root.addView(right, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1.15f));
+        }
+        return root;
+    }
+
+    private LinearLayout newRow() {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        return r;
+    }
+
+    private LinearLayout.LayoutParams rowLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        lp.topMargin = dp(8);
+        return lp;
+    }
+
+    private void addKey(LinearLayout row, String label, float weight) {
+        TextView key = new TextView(this);
+        key.setText(label);
+        key.setGravity(Gravity.CENTER);
+        key.setTag(label);
+        key.setOnClickListener(this);
+        key.setTypeface(Typeface.DEFAULT_BOLD);
+        boolean isEq = "=".equals(label);
+        boolean isOp = "+-×÷%".contains(label) || "C".equals(label);
+        key.setTextColor(isEq ? 0xFF04121A : (isOp ? 0xFF37F5D8 : 0xFFDFF7F2));
+        key.setTextSize(TypedValue.COMPLEX_UNIT_SP, isEq ? 26 : 22);
+        key.setBackgroundResource(isEq ? R.drawable.bg_key_eq
+                : (isOp ? R.drawable.bg_key_op : R.drawable.bg_key));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, weight);
+        lp.leftMargin = dp(5);
+        lp.rightMargin = dp(5);
+        row.addView(key, lp);
+        keyViews.put(label, key);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration cfg) {
+        super.onConfigurationChanged(cfg);
+        String expr = input.toString();
+        String res = tvResult != null ? tvResult.getText().toString() : "0";
+        String st = tvStatus != null ? tvStatus.getText().toString() : "";
+        keyViews.clear();
+        setContentView(buildUi());
+        updateSoundUi();
+        input.setLength(0);
+        input.append(expr);
+        tvExpr.setText(pretty(expr));
+        tvResult.setText(res);
+        tvStatus.setText(st);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        String label = mapKey(keyCode, event);
+        if (label != null) {
+            speakKey(label);
+            flash(label);
+            performKey(label);
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    /** USB / 蓝牙键盘按键映射（区分 Shift，避免 = 与 + 冲突） */
+    private String mapKey(int code, KeyEvent e) {
+        boolean shift = e.isShiftPressed();
+
+        if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
+            if (shift) {
+                if (code == KeyEvent.KEYCODE_5) return "%";
+                if (code == KeyEvent.KEYCODE_8) return "×";
+            }
+            return String.valueOf((char) ('0' + (code - KeyEvent.KEYCODE_0)));
+        }
+        if (code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9) {
+            return String.valueOf((char) ('0' + (code - KeyEvent.KEYCODE_NUMPAD_0)));
+        }
+        switch (code) {
+            case KeyEvent.KEYCODE_NUMPAD_ADD:
+            case KeyEvent.KEYCODE_PLUS:
+                return "+";
+            case KeyEvent.KEYCODE_NUMPAD_SUBTRACT:
+            case KeyEvent.KEYCODE_MINUS:
+                return "−";
+            case KeyEvent.KEYCODE_NUMPAD_MULTIPLY:
+            case KeyEvent.KEYCODE_STAR:
+                return "×";
+            case KeyEvent.KEYCODE_NUMPAD_DIVIDE:
+            case KeyEvent.KEYCODE_SLASH:
+                return "÷";
+            case KeyEvent.KEYCODE_NUMPAD_DOT:
+            case KeyEvent.KEYCODE_PERIOD:
+                return ".";
+            case KeyEvent.KEYCODE_EQUALS:
+                return shift ? "+" : "=";
+            case KeyEvent.KEYCODE_NUMPAD_EQUALS:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+                return "=";
+            case KeyEvent.KEYCODE_DEL:
+            case KeyEvent.KEYCODE_FORWARD_DEL:
+                return "⌫";
+            case KeyEvent.KEYCODE_ESCAPE:
+            case KeyEvent.KEYCODE_CLEAR:
+                return "C";
+            default:
+                return null;
+        }
+    }
+
+    private void attrKeyStyle(TextView v) {
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        v.setSingleLine(true);
+        v.setPadding(0, 0, 0, 0);
+        v.setGravity(Gravity.CENTER);
+        v.setBackgroundResource(R.drawable.bg_key);
+    }
+
+    private void flash(final String label) {
+        final TextView v = keyViews.get(label);
+        if (v == null) return;
+        v.setBackgroundResource(R.drawable.bg_key_active);
+        v.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                boolean isEq = "=".equals(label);
+                boolean isOp = "+-×÷%".contains(label) || "C".equals(label);
+                v.setBackgroundResource(isEq ? R.drawable.bg_key_eq
+                        : (isOp ? R.drawable.bg_key_op : R.drawable.bg_key));
+            }
+        }, 130);
+    }
+
+    @Override
+    public void onClick(View v) {
+        String k = (String) v.getTag();
+        if (k == null) return;
+        if ("HIST".equals(k)) {
+            showHistory();
+            return;
+        }
+        if ("SOUND".equals(k)) {
+            soundOn = !soundOn;
+            getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean("sound", soundOn).apply();
+            if (!soundOn && tts != null) {
+                try {
+                    tts.stop();
+                } catch (Throwable ignored) {
+                }
+            }
+            updateSoundUi();
+            if (soundOn && tts != null) {
+                try {
+                    tts.speak("声音已打开", TextToSpeech.QUEUE_FLUSH, null, "s");
+                } catch (Throwable ignored) {
+                }
+            }
+            return;
+        }
+        if ("MIC".equals(k)) {
+            if (toneGen != null && soundOn) {
+                try {
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 90);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (vListening) stopVosk();
+            else startListen();
+            return;
+        }
+        speakKey(k);
+        flash(k);
+        performKey(k);
+    }
+
+    private void performKey(String k) {
+        switch (k) {
+            case "C":
+                input.setLength(0);
+                justEvaluated = false;
+                tvExpr.setText("");
+                setResultText("0");
+                break;
+            case "⌫":
+                if (justEvaluated) {
+                    input.setLength(0);
+                    justEvaluated = false;
+                } else if (input.length() > 0) {
+                    input.deleteCharAt(input.length() - 1);
+                }
+                refreshDisplay();
+                break;
+            case "=":
+                evaluate();
+                break;
+            case "÷":
+                chainOp("/");
+                break;
+            case "×":
+                chainOp("*");
+                break;
+            case "−":
+                chainOp("-");
+                break;
+            case "+":
+                chainOp("+");
+                break;
+            case "%":
+                chainOp("/100");
+                break;
+            default:
+                if (justEvaluated) {
+                    if (tvPrev != null) {
+                        String prev = tvExpr.getText().toString();
+                        String pr = tvResult.getText().toString();
+                        if (!prev.isEmpty()) {
+                            recentCalcs.add(prev + " = " + pr);
+                            while (recentCalcs.size() > 4) recentCalcs.remove(0);
+                            StringBuilder b = new StringBuilder();
+                            for (int i = 0; i < recentCalcs.size(); i++) {
+                                if (i > 0) b.append("   ");
+                                b.append(recentCalcs.get(i));
+                            }
+                            tvPrev.setText(b.toString());
+                        }
+                    }
+                    input.setLength(0);
+                    justEvaluated = false;
+                }
+                input.append(k);
+                refreshDisplay();
+                break;
+        }
+    }
+
+    /** 出结果后按运算符：从结果继续算 */
+    private void chainOp(String op) {
+        if (justEvaluated) {
+            String r = tvResult.getText().toString();
+            input.setLength(0);
+            try {
+                Double.parseDouble(r);
+                input.append(r);
+            } catch (Exception ignored) {
+            }
+            justEvaluated = false;
+        }
+        input.append(op);
+        refreshDisplay();
+    }
+
+    private String pretty(String s) {
+        return s.replace("*", "×").replace("/", "÷").replace("-", "−");
+    }
+
+    /** 大号数字：按长度自动缩放，避免出格 */
+    private void setResultText(String text) {
+        boolean land = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        float base = land ? 34f : 50f;
+        float sp = text.length() <= 8 ? base : Math.max(14f, base * 8f / text.length());
+        tvResult.setText(text);
+        tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+    }
+
+    /** 大号数字显示当前正在输入的运算数 */
+    private void refreshDisplay() {
+        String s = input.toString();
+        if (s.isEmpty()) {
+            setResultText("0");
+            tvExpr.setText("");
+            return;
+        }
+        int cut = -1;
+        for (int i = s.length() - 1; i >= 0; i--) {
+            char c = s.charAt(i);
+            if (c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')') {
+                cut = i;
+                break;
+            }
+        }
+        String operand = s.substring(cut + 1);
+        if (operand.isEmpty()) {
+            setResultText("0");
+        } else {
+            setResultText(operand);
+        }
+        tvExpr.setText(pretty(s));
+    }
+
+    private void showHistory() {
+        java.util.List<String[]> rows = hist.recent(200);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(4), dp(8), dp(4));
+
+        if (rows.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("还没有记录\n算完会自动存这里，保留 30 天");
+            empty.setTextColor(0xFF4E7F8C);
+            empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dp(30), 0, dp(30));
+            box.addView(empty);
+        } else {
+            ScrollView sv = new ScrollView(this);
+            LinearLayout list = new LinearLayout(this);
+            list.setOrientation(LinearLayout.VERTICAL);
+            final java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("MM-dd HH:mm",
+                    java.util.Locale.CHINA);
+            for (final String[] r : rows) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setBackgroundResource(R.drawable.bg_hist_row);
+                row.setPadding(dp(12), dp(9), dp(12), dp(9));
+                row.setClickable(true);
+
+                TextView main = new TextView(this);
+                main.setText(r[0] + " = " + r[1]);
+                main.setTextColor(0xFFDFF7F2);
+                main.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                main.setSingleLine(true);
+                main.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                row.addView(main);
+
+                TextView time = new TextView(this);
+                time.setText(fmt.format(new java.util.Date(Long.parseLong(r[2]))));
+                time.setTextColor(0xFF3E6570);
+                time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+                row.addView(time);
+
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        input.setLength(0);
+                        input.append(r[0].replace("×", "*").replace("÷", "/").replace("−", "-"));
+                        tvExpr.setText(r[0]);
+                        tvResult.setText(r[1]);
+                    }
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.bottomMargin = dp(6);
+                list.addView(row, lp);
+            }
+            sv.addView(list);
+            box.addView(sv, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("计算记录（30 天）")
+                .setView(box)
+                .setPositiveButton("关闭", null)
+                .setNeutralButton("清空", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dlg, int w) {
+                        hist.clear();
+                    }
+                })
+                .show();
+    }
+
+    private void evaluate() {
+        String e = input.toString().trim();
+        if (e.isEmpty()) return;
+        try {
+            double v = Calc.eval(e);
+            showResult(v);
+            speak("等于 " + Calc.fmt(v));
+            hist.add(pretty(e), Calc.fmt(v));
+            justEvaluated = true;
+        } catch (ArithmeticException ex) {
+            justEvaluated = false;
+            tvResult.setText("不能除以零");
+            tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
+        } catch (Exception ex) {
+            justEvaluated = false;
+            tvResult.setText("算式有误");
+            tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
+        }
+    }
+
+    private void showResult(double v) {
+        String s = Calc.fmt(v);
+        setResultText(s);
+    }
+
+    // ---------------- 语音 ----------------
+
+
+    /** 主动在系统里找可用的 RecognitionService */
+    private ComponentName pickRecognizer() {
+        try {
+            java.util.List<android.content.pm.ResolveInfo> list =
+                    getPackageManager().queryIntentServices(
+                            new Intent("android.speech.RecognitionService"), 0);
+            if (list != null && !list.isEmpty()) {
+                android.content.pm.ResolveInfo ri = list.get(0);
+                if (ri.serviceInfo != null) {
+                    return new ComponentName(ri.serviceInfo.packageName, ri.serviceInfo.name);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private String describeRecognizers() {
+        StringBuilder b = new StringBuilder();
+        try {
+            java.util.List<android.content.pm.ResolveInfo> list =
+                    getPackageManager().queryIntentServices(
+                            new Intent("android.speech.RecognitionService"), 0);
+            if (list == null || list.isEmpty()) return "系统里没有任何语音识别服务";
+            for (android.content.pm.ResolveInfo ri : list) {
+                if (ri.serviceInfo != null) b.append(ri.serviceInfo.packageName).append("\n");
+            }
+        } catch (Throwable t) {
+            return "查询失败";
+        }
+        return b.toString().trim();
+    }
+
+    private void startListen() {
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
+            return;
+        }
+        startVosk();
+    }
+
+    // ---------------- 离线语音识别（Vosk + 中文小模型） ----------------
+
+    private void startVosk() {
+        if (vListening) {
+            stopVosk();
+            return;
+        }
+        if (vModel != null && vRec != null) {
+            startMic();
+            return;
+        }
+        tvStatus.setText("正在准备语音模型（首次约需几秒）…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File dir = new File(getFilesDir(), "model");
+                    if (!new File(dir, "am/final.mdl").exists()) {
+                        copyAssets("model", dir);
+                    }
+                    vModel = new org.vosk.Model(dir.getAbsolutePath());
+                    vRec = new org.vosk.Recognizer(vModel, 16000f, GRAMMAR);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            startMic();
+                        }
+                    });
+                } catch (final Throwable t) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            tvStatus.setText("语音模型加载失败：" + t);
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void copyAssets(String from, File to) throws Exception {
+        String[] list = getAssets().list(from);
+        if (list == null) return;
+        if (!to.exists()) to.mkdirs();
+        for (String name : list) {
+            String path = from.isEmpty() ? name : from + "/" + name;
+            String[] sub = getAssets().list(path);
+            File target = new File(to, name);
+            if (sub != null && sub.length > 0) {
+                copyAssets(path, target);
+            } else {
+                InputStream in = getAssets().open(path);
+                OutputStream out = new java.io.FileOutputStream(target);
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                out.close();
+                in.close();
+            }
+        }
+    }
+
+    private void startMic() {
+        try {
+            int min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT);
+            vAudio = new AudioRecord(MediaRecorder.AudioSource.MIC, 16000,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                    Math.max(min * 2, 8192));
+            vAudio.startRecording();
+            vListening = true;
+            vPartial = "";
+            btnMic.setText("🎤  正在听…（说完自动结束）");
+            btnMic.setBackgroundResource(R.drawable.bg_mic_active);
+            tvStatus.setText("请说，例如：三十二加五十八，说完会自动计算");
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    byte[] buf = new byte[3200];
+                    boolean heardAny = false;
+                    long started = System.currentTimeMillis();
+                    while (vListening) {
+                        int n;
+                        try {
+                            n = vAudio.read(buf, 0, buf.length);
+                        } catch (Throwable t) {
+                            break;
+                        }
+                        if (n <= 0) continue;
+                        try {
+                            boolean end = vRec.acceptWaveForm(buf, n);
+                            if (end) {
+                                String done = extractText(vRec.getResult());
+                                vRec.reset();
+                                // 还没听到内容时（比如刚开麦的静音），继续听，不提前结束
+                                if ((done == null || done.trim().isEmpty()) && !heardAny
+                                        && System.currentTimeMillis() - started < 12000) {
+                                    continue;
+                                }
+                                vListening = false;
+                                releaseAudio();
+                                final String finalText = done;
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        resetMic();
+                                        if (finalText == null || finalText.trim().isEmpty()) {
+                                            tvStatus.setText("没听清，再说一次");
+                                        } else {
+                                            handleVoice(finalText.replace(" ", ""));
+                                        }
+                                    }
+                                });
+                                return;
+                            }
+                            final String t = extractText(vRec.getPartialResult());
+                            if (t != null && !t.isEmpty()) heardAny = true;
+                            if (t != null && !t.isEmpty() && !t.equals(vPartial)) {
+                                vPartial = t;
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        tvStatus.setText("听到：" + t);
+                                    }
+                                });
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+            }).start();
+        } catch (Throwable t) {
+            tvStatus.setText("麦克风打不开：" + t);
+            resetMic();
+        }
+    }
+
+    private void releaseAudio() {
+        try {
+            if (vAudio != null) {
+                vAudio.stop();
+                vAudio.release();
+                vAudio = null;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void stopVosk() {
+        vListening = false;
+        releaseAudio();
+        resetMic();
+        try {
+            String text = extractText(vRec.getFinalResult());
+            vRec.reset();
+            if (text == null || text.trim().isEmpty()) {
+                tvStatus.setText("没听清，再说一次");
+                return;
+            }
+            handleVoice(text.replace(" ", ""));
+        } catch (Throwable t) {
+            tvStatus.setText("识别出错：" + t);
+        }
+    }
+
+    private static String extractText(String json) {
+        if (json == null) return null;
+        int i = json.indexOf("\"text\"");
+        if (i < 0) return null;
+        int c = json.indexOf(':', i);
+        int a = json.indexOf('"', c + 1);
+        int b = json.indexOf('"', a + 1);
+        if (a < 0 || b < 0) return null;
+        return json.substring(a + 1, b);
+    }
+
+    private void stopListen() {
+        stopVosk();
+    }
+
+    private void resetMic() {
+        listening = false;
+        if (btnMic != null) {
+            btnMic.setText("🎤  说话算一算");
+            btnMic.setBackgroundResource(R.drawable.bg_mic);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        if (req == REQ_AUDIO) {
+            if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) startListen();
+            else tvStatus.setText("没有麦克风权限，只能手动按键了");
+        }
+    }
+
+    @Override
+    public void onReadyForSpeech(Bundle params) {
+        tvStatus.setText("请说…");
+    }
+
+    @Override
+    public void onBeginningOfSpeech() {
+    }
+
+    @Override
+    public void onRmsChanged(float rms) {
+    }
+
+    @Override
+    public void onBufferReceived(byte[] buffer) {
+    }
+
+    @Override
+    public void onEndOfSpeech() {
+        tvStatus.setText("识别中…");
+    }
+
+    @Override
+    public void onError(int error) {
+        resetMic();
+        String msg;
+        switch (error) {
+            case SpeechRecognizer.ERROR_NO_MATCH:
+                msg = "没听清，再说一次";
+                break;
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                msg = "没听到声音";
+                break;
+            case SpeechRecognizer.ERROR_NETWORK:
+            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+                msg = "网络不好，识别失败";
+                break;
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
+                msg = "缺少麦克风权限";
+                break;
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                msg = "识别器忙，稍后再试";
+                break;
+            case SpeechRecognizer.ERROR_CLIENT:
+                msg = "识别器异常（" + recService + "）";
+                break;
+            case SpeechRecognizer.ERROR_SERVER:
+                msg = "识别服务出错（" + recService + "）";
+                break;
+            default:
+                msg = "没听清，再说一次";
+                break;
+        }
+        tvStatus.setText(msg);
+    }
+
+    @Override
+    public void onResults(Bundle results) {
+        resetMic();
+        ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+        String text = (list != null && !list.isEmpty()) ? list.get(0) : null;
+        if (text == null || text.trim().isEmpty()) {
+            tvStatus.setText("没听清，再说一次");
+            return;
+        }
+        handleVoice(text);
+    }
+
+    @Override
+    public void onPartialResults(Bundle partial) {
+        ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+        if (list != null && !list.isEmpty()) tvStatus.setText("听到：" + list.get(0));
+    }
+
+    @Override
+    public void onEvent(int type, Bundle params) {
+    }
+
+    private void handleVoice(String text) {
+        try {
+            String e = Parser.toExpression(text);
+            double v = Calc.eval(e);
+            input.setLength(0);
+            input.append(e);
+            tvExpr.setText(pretty(e));
+            showResult(v);
+            tvStatus.setText("听到：" + text);
+            speak("等于 " + Calc.fmt(v));
+            justEvaluated = true;
+            hist.add(pretty(e), Calc.fmt(v));
+        } catch (ArithmeticException ex) {
+            tvStatus.setText("听到：“" + text + "”，不能除以零");
+        } catch (Exception ex) {
+            tvStatus.setText("没听懂：“" + text + "”，再说一次");
+        }
+    }
+
+    // ---------------- TTS ----------------
+
+    private void initTts() {
+        tts = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if (status == TextToSpeech.SUCCESS && tts != null) {
+                    tts.setLanguage(Locale.CHINA);
+                    tts.setSpeechRate(1.05f);
+                }
+            }
+        });
+    }
+
+    private void speak(String s) {
+        if (!soundOn || tts == null) return;
+        try {
+            tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "r");
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (listening) stopListen();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (recognizer != null) {
+            try {
+                recognizer.destroy();
+            } catch (Exception ignored) {
+            }
+            recognizer = null;
+        }
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception ignored) {
+            }
+            tts = null;
+        }
+        if (toneGen != null) {
+            try {
+                toneGen.release();
+            } catch (Throwable ignored) {
+            }
+            toneGen = null;
+        }
+        super.onDestroy();
+    }
+}

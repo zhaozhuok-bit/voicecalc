@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0E0E16</color>
+    <color name="card">#171724</color>
+    <color name="key">#22222F</color>
+    <color name="key_op">#2C2C3E</color>
+    <color name="txt">#FFFFFFFF</color>
+    <color name="txt_dim">#8A8AA3</color>
+    <color name="cyan">#3BE0C8</color>
+</resources>
