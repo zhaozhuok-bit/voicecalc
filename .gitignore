@@ -3,6 +3,7 @@ build/
 gen/
 classes/
 *.apk
+!dist/*.apk
 
 # 第三方依赖（用 download-deps.sh 拉取）
 sdk/
