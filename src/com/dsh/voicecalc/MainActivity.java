@@ -60,6 +60,16 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private HistoryDb hist;
     private TextView btnHist;
     private TextView btnAbout;
+    private TextView btnLang;
+    private boolean langEn = false;
+
+    private String S(String zh, String en) {
+        return langEn ? en : zh;
+    }
+
+    private void saveLang() {
+        getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean("lang_en", langEn).apply();
+    }
     private final HashMap<String, TextView> keyViews = new HashMap<>();
     private LinearLayout keypad;
     private TextView btnSound;
@@ -75,6 +85,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         density = getResources().getDisplayMetrics().density;
         setContentView(buildUi());
         updateSoundUi();
+        langEn = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("lang_en", false);
         hist = new HistoryDb(this);
         hist.prune();
         initTts();
@@ -119,8 +130,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         if (btnSound == null) return;
         boolean land = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE;
-        btnSound.setText(land ? (soundOn ? "人声" : "静音")
-                : (soundOn ? "🔊 人声：开" : "🔇 人声：关"));
+        btnSound.setText(land
+                ? S(soundOn ? "人声" : "静音", soundOn ? "Sound" : "Muted")
+                : S(soundOn ? "🔊 人声：开" : "🔇 人声：关",
+                    soundOn ? "🔊 Sound: on" : "🔇 Sound: off"));
         btnSound.setTextColor(soundOn ? 0xFF3BE0C8 : 0xFF8A8AA3);
     }
 
@@ -145,15 +158,25 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             topBar.setGravity(Gravity.CENTER_VERTICAL);
 
             TextView title = new TextView(this);
-            title.setText("语音计算器");
+            title.setText(S("语音计算器", "Voice Calculator"));
             title.setTextColor(0xFF3E6570);
             title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
             title.setLetterSpacing(0.12f);
             topBar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
 
+        btnLang = new TextView(this);
+        btnLang.setText(langEn ? "中" : "EN");
+        btnLang.setTag("LANG");
+        btnLang.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnLang.setPadding(dp(12), dp(7), dp(12), dp(7));
+        btnLang.setBackgroundResource(R.drawable.bg_key);
+        btnLang.setTextColor(0xFF37F5D8);
+        btnLang.setClickable(true);
+        btnLang.setOnClickListener(this);
+
         btnAbout = new TextView(this);
-        btnAbout.setText("关于");
+        btnAbout.setText(S("关于", "About"));
         btnAbout.setTag("ABOUT");
         btnAbout.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnAbout.setPadding(dp(12), dp(7), dp(12), dp(7));
@@ -163,7 +186,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         btnAbout.setOnClickListener(this);
 
         btnHist = new TextView(this);
-        btnHist.setText("记录");
+        btnHist.setText(S("记录", "History"));
         btnHist.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnHist.setPadding(dp(12), dp(7), dp(12), dp(7));
         btnHist.setBackgroundResource(R.drawable.bg_key);
@@ -175,6 +198,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hlp.rightMargin = dp(8);
         if (topBar != null) {
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            llp.rightMargin = dp(8);
+            topBar.addView(btnLang, llp);
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             alp.rightMargin = dp(8);
@@ -234,7 +261,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
         // 麦克风
         btnMic = new TextView(this);
-        btnMic.setText("🎤  说话算一算");
+        btnMic.setText(S("🎤  说话算一算", "🎤  Tap and speak"));
         btnMic.setTextColor(0xFFFFFFFF);
         btnMic.setTextSize(TypedValue.COMPLEX_UNIT_SP, land ? 15 : 19);
         btnMic.setTypeface(Typeface.DEFAULT_BOLD);
@@ -249,7 +276,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
         // 状态
         tvStatus = new TextView(this);
-        tvStatus.setText("例：三十二加五十八 · 十五乘以四 · 百分之二十");
+        tvStatus.setText(S("例：三十二加五十八 · 十五乘以四 · 百分之二十", "e.g. 三十二加五十八 (Chinese numerals)"));
         tvStatus.setTextColor(0xFF3E6570);
         tvStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvStatus.setGravity(Gravity.CENTER);
@@ -357,6 +384,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             keyLp.rightMargin = dp(5);
             attrKeyStyle(btnHist);
             attrKeyStyle(btnSound);
+            attrKeyStyle(btnLang);
+            LinearLayout.LayoutParams lgLp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0.5f);
+            lgLp.leftMargin = dp(5);
+            lgLp.rightMargin = dp(5);
+            bottomRow.addView(btnLang, lgLp);
             attrKeyStyle(btnAbout);
             LinearLayout.LayoutParams abLp = new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.MATCH_PARENT, 0.55f);
@@ -372,7 +405,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             addKey(bottomRow, "⌫", 0.95f);
             addKey(bottomRow, "%", 0.9f);
 
-            btnMic.setText("🎤 说话");
+            btnMic.setText(S("🎤 说话", "🎤 Speak"));
             LinearLayout.LayoutParams micLp2 = new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.MATCH_PARENT, 1.7f);
             micLp2.leftMargin = dp(5);
@@ -531,6 +564,26 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     public void onClick(View v) {
         String k = (String) v.getTag();
         if (k == null) return;
+        if ("LANG".equals(k)) {
+            langEn = !langEn;
+            saveLang();
+            if (tts != null) {
+                try {
+                    tts.setLanguage(java.util.Locale.US);
+                } catch (Throwable ignored) {
+                }
+            }
+            String keep = input.toString();
+            String res = tvResult != null ? tvResult.getText().toString() : "0";
+            keyViews.clear();
+            setContentView(buildUi());
+            updateSoundUi();
+            input.setLength(0);
+            input.append(keep);
+            tvExpr.setText(pretty(keep));
+            setResultText(res);
+            return;
+        }
         if ("ABOUT".equals(k)) {
             showAbout();
             return;
@@ -551,7 +604,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             updateSoundUi();
             if (soundOn && tts != null) {
                 try {
-                    tts.speak("声音已打开", TextToSpeech.QUEUE_FLUSH, null, "s");
+                    tts.speak(S("声音已打开", "Sound on"), TextToSpeech.QUEUE_FLUSH, null, "s");
                 } catch (Throwable ignored) {
                 }
             }
@@ -688,6 +741,62 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         tvExpr.setText(pretty(s));
     }
 
+    private static final String ZH_ABOUT =
+            "语音计算器  v" + "$V" + "\n\n"
+            + "一个完全离线的中文语音计算器。说「三十二加五十八」就能算出结果，"
+            + "识别全部在本机完成，不上传任何语音，也不需要联网。\n\n"
+            + "主要功能\n"
+            + "· 离线语音识别：说完停顿即自动计算并朗读结果\n"
+            + "· 连续计算：出结果后按数字＝新算，按运算符＝接着算\n"
+            + "· 计算记录：自动保存最近 30 天，可点击回填\n"
+            + "· 横竖屏自适应：横屏左右手分工，单手也好按\n"
+            + "· 外接键盘：USB / 蓝牙键盘按键映射，屏幕同步高亮\n"
+            + "· 按键人声可开关，设置自动记忆\n\n"
+            + "技术说明\n"
+            + "界面为原生 Android 实现；语音识别使用开源的 Vosk 引擎与中文小模型，"
+            + "全部离线运行。\n\n"
+            + "免责声明\n"
+            + "1. 本软件完全免费，不以任何形式收费，也不收集、上传或出售用户数据。\n"
+            + "2. 软件按「现状」提供，不对计算或识别结果的准确性作任何担保。"
+            + "因使用本软件造成的任何直接或间接损失，由使用者自行承担。\n"
+            + "3. 软件中涉及的第三方组件（包括但不限于 Vosk 语音识别引擎及其声学模型），"
+            + "版权归各自作者所有，遵循其原有的开源许可协议。\n"
+            + "4. 若本软件的任何内容侵犯了您的版权或其他协议权益，请通过下方邮箱联系我们，"
+            + "我们会在核实后立即删除或修正。\n\n"
+            + "联系方式\n"
+            + "邮箱：Zhaozhuok@vip.qq.com\n\n"
+            + "开源地址\n"
+            + "github.com/zhaozhuok-bit/voicecalc";
+
+    private static final String EN_ABOUT =
+            "Voice Calculator  v" + "$V" + "\n\n"
+            + "A fully offline Chinese speech calculator. Say \"san shi er jia wu shi ba\" "
+            + "and it gives you the answer. Recognition runs entirely on the device - "
+            + "no audio is uploaded, no network needed.\n\n"
+            + "Features\n"
+            + "- Offline speech: pause after speaking, it stops, computes and reads the result\n"
+            + "- Chained calculation: after a result, digits start a new one, an operator continues\n"
+            + "- History: the last 30 days are kept, tap an entry to reuse it\n"
+            + "- Portrait and landscape: in landscape the left hand gets the display and operators\n"
+            + "- External keyboards: USB / Bluetooth keys map to the on-screen keys\n"
+            + "- Spoken key feedback can be turned off and is remembered\n\n"
+            + "Notes\n"
+            + "Native Android UI, with the open-source Vosk engine and a small Chinese model, "
+            + "all running offline. Speech input understands Chinese numerals.\n\n"
+            + "Disclaimer\n"
+            + "1. This software is completely free. It does not charge any fee and does not "
+            + "collect, upload or sell user data.\n"
+            + "2. It is provided \"as is\", without any warranty on the accuracy of results. "
+            + "Any loss caused by using it is borne by the user.\n"
+            + "3. Third-party components (including but not limited to the Vosk speech engine and "
+            + "its acoustic model) remain the property of their authors and follow their licenses.\n"
+            + "4. If any content infringes your copyright or license terms, please contact us "
+            + "and we will remove or correct it promptly.\n\n"
+            + "Contact\n"
+            + "Email: Zhaozhuok@vip.qq.com\n\n"
+            + "Source\n"
+            + "github.com/zhaozhuok-bit/voicecalc";
+
     private void showAbout() {
         ScrollView sv = new ScrollView(this);
         TextView tv = new TextView(this);
@@ -695,38 +804,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         tv.setTextColor(0xFFCFE9E4);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tv.setLineSpacing(dp(3), 1f);
-        tv.setText(
-                "语音计算器  v" + versionName() + "\n\n"
-                + "一个完全离线的中文语音计算器。说「三十二加五十八」就能算出结果，"
-                + "识别全部在本机完成，不上传任何语音，也不需要联网。\n\n"
-                + "主要功能\n"
-                + "· 离线语音识别：说完停顿即自动计算并朗读结果\n"
-                + "· 连续计算：出结果后按数字＝新算，按运算符＝接着算\n"
-                + "· 计算记录：自动保存最近 30 天，可点击回填\n"
-                + "· 横竖屏自适应：横屏左右手分工，单手也好按\n"
-                + "· 外接键盘：USB / 蓝牙键盘按键映射，屏幕同步高亮\n"
-                + "· 按键人声可开关，设置自动记忆\n\n"
-                + "技术说明\n"
-                + "界面为原生 Android 实现；语音识别使用开源的 Vosk 引擎与中文小模型，"
-                + "全部离线运行。\n\n"
-                + "免责声明\n"
-                + "1. 本软件完全免费，不以任何形式收费，也不收集、上传或出售用户数据。\n"
-                + "2. 软件按「现状」提供，不对计算或识别结果的准确性作任何担保。"
-                + "因使用本软件造成的任何直接或间接损失，由使用者自行承担。\n"
-                + "3. 软件中涉及的第三方组件（包括但不限于 Vosk 语音识别引擎及其声学模型），"
-                + "版权归各自作者所有，遵循其原有的开源许可协议。\n"
-                + "4. 若本软件的任何内容侵犯了您的版权或其他协议权益，请通过下方邮箱联系我们，"
-                + "我们会在核实后立即删除或修正。\n\n"
-                + "联系方式\n"
-                + "邮箱：Zhaozhuok@vip.qq.com\n\n"
-                + "开源地址\n"
-                + "github.com/zhaozhuok-bit/voicecalc");
+        tv.setText((langEn ? EN_ABOUT : ZH_ABOUT).replace("$V", versionName()));
         sv.addView(tv);
 
         new AlertDialog.Builder(this)
-                .setTitle("关于 / 免责声明")
+                .setTitle(S("关于 / 免责声明", "About / Disclaimer"))
                 .setView(sv)
-                .setPositiveButton("知道了", null)
+                .setPositiveButton(S("知道了", "OK"), null)
                 .show();
     }
 
@@ -746,7 +830,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
         if (rows.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("还没有记录\n算完会自动存这里，保留 30 天");
+            empty.setText(S("还没有记录\n算完会自动存这里，保留 30 天", "No history yet\nResults are kept here for 30 days"));
             empty.setTextColor(0xFF4E7F8C);
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
             empty.setGravity(Gravity.CENTER);
@@ -799,10 +883,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("计算记录（30 天）")
+                .setTitle(S("计算记录（30 天）", "History (30 days)"))
                 .setView(box)
-                .setPositiveButton("关闭", null)
-                .setNeutralButton("清空", new android.content.DialogInterface.OnClickListener() {
+                .setPositiveButton(S("关闭", "Close"), null)
+                .setNeutralButton(S("清空", "Clear"), new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface dlg, int w) {
                         hist.clear();
@@ -817,16 +901,16 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         try {
             double v = Calc.eval(e);
             showResult(v);
-            speak("等于 " + Calc.fmt(v));
+            speak(S("等于 ", "equals ") + Calc.fmt(v));
             hist.add(pretty(e), Calc.fmt(v));
             justEvaluated = true;
         } catch (ArithmeticException ex) {
             justEvaluated = false;
-            tvResult.setText("不能除以零");
+            tvResult.setText(S("不能除以零", "Divide by zero"));
             tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
         } catch (Exception ex) {
             justEvaluated = false;
-            tvResult.setText("算式有误");
+            tvResult.setText(S("算式有误", "Invalid expression"));
             tvResult.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
         }
     }
@@ -892,7 +976,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             startMic();
             return;
         }
-        tvStatus.setText("正在准备语音模型（首次约需几秒）…");
+        tvStatus.setText(S("正在准备语音模型（首次约需几秒）…", "Preparing speech model (a few seconds)..."));
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -913,7 +997,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            tvStatus.setText("语音模型加载失败：" + t);
+                            tvStatus.setText(S("语音模型加载失败：", "Speech model failed: ") + t);
                         }
                     });
                 }
@@ -953,9 +1037,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             vAudio.startRecording();
             vListening = true;
             vPartial = "";
-            btnMic.setText("🎤  正在听…（说完自动结束）");
+            btnMic.setText(S("🎤  正在听…（说完自动结束）", "🎤  Listening... (auto-stop)"));
             btnMic.setBackgroundResource(R.drawable.bg_mic_active);
-            tvStatus.setText("请说，例如：三十二加五十八，说完会自动计算");
+            tvStatus.setText(S("请说，例如：三十二加五十八，说完会自动计算", "Say a calculation, e.g. 三十二加五十八"));
             new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -988,7 +1072,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                                     public void run() {
                                         resetMic();
                                         if (finalText == null || finalText.trim().isEmpty()) {
-                                            tvStatus.setText("没听清，再说一次");
+                                            tvStatus.setText(S("没听清，再说一次", "Not caught, please repeat"));
                                         } else {
                                             handleVoice(finalText.replace(" ", ""));
                                         }
@@ -1003,7 +1087,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                                 runOnUiThread(new Runnable() {
                                     @Override
                                     public void run() {
-                                        tvStatus.setText("听到：" + t);
+                                        tvStatus.setText(S("听到：", "Heard: ") + t);
                                     }
                                 });
                             }
@@ -1013,7 +1097,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 }
             }).start();
         } catch (Throwable t) {
-            tvStatus.setText("麦克风打不开：" + t);
+            tvStatus.setText(S("麦克风打不开：", "Mic unavailable: ") + t);
             resetMic();
         }
     }
@@ -1037,12 +1121,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             String text = extractText(vRec.getFinalResult());
             vRec.reset();
             if (text == null || text.trim().isEmpty()) {
-                tvStatus.setText("没听清，再说一次");
+                tvStatus.setText(S("没听清，再说一次", "Not caught, please repeat"));
                 return;
             }
             handleVoice(text.replace(" ", ""));
         } catch (Throwable t) {
-            tvStatus.setText("识别出错：" + t);
+            tvStatus.setText(S("识别出错：", "Recognition error: ") + t);
         }
     }
 
@@ -1064,7 +1148,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private void resetMic() {
         listening = false;
         if (btnMic != null) {
-            btnMic.setText("🎤  说话算一算");
+            btnMic.setText(S("🎤  说话算一算", "🎤  Tap and speak"));
             btnMic.setBackgroundResource(R.drawable.bg_mic);
         }
     }
@@ -1073,13 +1157,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
         if (req == REQ_AUDIO) {
             if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) startListen();
-            else tvStatus.setText("没有麦克风权限，只能手动按键了");
+            else tvStatus.setText(S("没有麦克风权限，只能手动按键了", "No mic permission - use the keypad"));
         }
     }
 
     @Override
     public void onReadyForSpeech(Bundle params) {
-        tvStatus.setText("请说…");
+        tvStatus.setText(S("请说…", "Speak now..."));
     }
 
     @Override
@@ -1096,7 +1180,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
     @Override
     public void onEndOfSpeech() {
-        tvStatus.setText("识别中…");
+        tvStatus.setText(S("识别中…", "Recognizing..."));
     }
 
     @Override
@@ -1139,7 +1223,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
         String text = (list != null && !list.isEmpty()) ? list.get(0) : null;
         if (text == null || text.trim().isEmpty()) {
-            tvStatus.setText("没听清，再说一次");
+            tvStatus.setText(S("没听清，再说一次", "Not caught, please repeat"));
             return;
         }
         handleVoice(text);
@@ -1148,7 +1232,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     @Override
     public void onPartialResults(Bundle partial) {
         ArrayList<String> list = partial.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-        if (list != null && !list.isEmpty()) tvStatus.setText("听到：" + list.get(0));
+        if (list != null && !list.isEmpty()) tvStatus.setText(S("听到：", "Heard: ") + list.get(0));
     }
 
     @Override
@@ -1164,13 +1248,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             tvExpr.setText(pretty(e));
             showResult(v);
             tvStatus.setText("听到：" + text);
-            speak("等于 " + Calc.fmt(v));
+            speak(S("等于 ", "equals ") + Calc.fmt(v));
             justEvaluated = true;
             hist.add(pretty(e), Calc.fmt(v));
         } catch (ArithmeticException ex) {
-            tvStatus.setText("听到：“" + text + "”，不能除以零");
+            tvStatus.setText(S("听到：“", "Heard: ") + text + S("”，不能除以零", " - divide by zero"));
         } catch (Exception ex) {
-            tvStatus.setText("没听懂：“" + text + "”，再说一次");
+            tvStatus.setText(S("没听懂：“", "Not understood: ") + text + S("”，再说一次", " - try again"));
         }
     }
 
@@ -1181,7 +1265,11 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             @Override
             public void onInit(int status) {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
-                    tts.setLanguage(Locale.CHINA);
+                    try {
+                        tts.setLanguage(langEn ? Locale.US : Locale.CHINA);
+                    } catch (Throwable ignored) {
+                        tts.setLanguage(Locale.CHINA);
+                    }
                     tts.setSpeechRate(1.05f);
                 }
             }
