@@ -106,17 +106,20 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         String say;
         char c = label.charAt(0);
         if (label.length() == 1 && c >= '0' && c <= '9') {
-            say = String.valueOf("零一二三四五六七八九".charAt(c - '0'));
+            say = langEn
+                    ? new String[]{"zero", "one", "two", "three", "four",
+                                   "five", "six", "seven", "eight", "nine"}[c - '0']
+                    : String.valueOf("零一二三四五六七八九".charAt(c - '0'));
         } else {
             switch (label) {
-                case ".": say = "点"; break;
-                case "+": say = "加"; break;
-                case "−": say = "减"; break;
-                case "×": say = "乘"; break;
-                case "÷": say = "除"; break;
-                case "%": say = "百分号"; break;
-                case "C": say = "清空"; break;
-                case "⌫": say = "退格"; break;
+                case ".": say = S("点", "point"); break;
+                case "+": say = S("加", "plus"); break;
+                case "−": say = S("减", "minus"); break;
+                case "×": say = S("乘", "times"); break;
+                case "÷": say = S("除", "divided by"); break;
+                case "%": say = S("百分号", "percent"); break;
+                case "C": say = S("清空", "clear"); break;
+                case "⌫": say = S("退格", "delete"); break;
                 default: return;
             }
         }
@@ -157,12 +160,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             topBar.setOrientation(LinearLayout.HORIZONTAL);
             topBar.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView title = new TextView(this);
-            title.setText(S("语音计算器", "Voice Calculator"));
-            title.setTextColor(0xFF3E6570);
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-            title.setLetterSpacing(0.12f);
-            topBar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            View spacer = new View(this);
+            topBar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
         }
 
         btnLang = new TextView(this);
@@ -569,7 +568,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             saveLang();
             if (tts != null) {
                 try {
-                    tts.setLanguage(java.util.Locale.US);
+                    tts.setLanguage(langEn ? java.util.Locale.US : java.util.Locale.CHINA);
                 } catch (Throwable ignored) {
                 }
             }
