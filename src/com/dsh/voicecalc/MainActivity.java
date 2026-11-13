@@ -97,7 +97,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         langEn = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("lang_en", false);
         hist = new HistoryDb(this);
         hist.prune();
-        initTts();
         initTone();
     }
 
@@ -134,27 +133,23 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             if (w != null) speakEn(w);
             return;
         }
-        if (tts == null) return;
-        String say;
+        String say = null;
         if (label.length() == 1 && c >= '0' && c <= '9') {
             say = String.valueOf("零一二三四五六七八九".charAt(c - '0'));
         } else {
             switch (label) {
-                case ".": say = S("点", "point"); break;
-                case "+": say = S("加", "plus"); break;
-                case "−": say = S("减", "minus"); break;
-                case "×": say = S("乘", "times"); break;
-                case "÷": say = S("除", "divided by"); break;
-                case "%": say = S("百分号", "percent"); break;
-                case "C": say = S("清空", "clear"); break;
-                case "⌫": say = S("退格", "delete"); break;
+                case ".": say = "点"; break;
+                case "+": say = "加"; break;
+                case "−": say = "减"; break;
+                case "×": say = "乘"; break;
+                case "÷": say = "除"; break;
+                case "%": say = "百分之"; break;
+                case "C": say = "清空"; break;
+                case "⌫": say = "退格"; break;
                 default: return;
             }
         }
-        try {
-            tts.speak(say, TextToSpeech.QUEUE_FLUSH, null, "k");
-        } catch (Throwable ignored) {
-        }
+        playEn(ZhSpeech.ids(say));
     }
 
     private void updateSoundUi() {
@@ -639,11 +634,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 }
             }
             updateSoundUi();
-            if (soundOn && tts != null) {
-                try {
-                    tts.speak(S("声音已打开", "Sound on"), TextToSpeech.QUEUE_FLUSH, null, "s");
-                } catch (Throwable ignored) {
-                }
+            if (soundOn) {
+                playEn(langEn ? EnSpeech.ids("one") : ZhSpeech.ids("一"));
             }
             return;
         }
@@ -938,7 +930,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         try {
             double v = Calc.eval(e);
             showResult(v);
-            speak(S("等于 ", "equals ") + Calc.fmt(v));
+            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于" + ZhSpeech.words(v)));
             hist.add(pretty(e), Calc.fmt(v));
             justEvaluated = true;
         } catch (ArithmeticException ex) {
@@ -1287,7 +1279,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             tvExpr.setText(pretty(e));
             showResult(v);
             tvStatus.setText("听到：" + text);
-            speak(S("等于 ", "equals ") + Calc.fmt(v));
+            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于" + ZhSpeech.words(v)));
             justEvaluated = true;
             hist.add(pretty(e), Calc.fmt(v));
         } catch (ArithmeticException ex) {
@@ -1382,37 +1374,14 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     }
 
     private void speak(String s) {
-        if (!soundOn) return;
-        if (langEn) {
-            speakEn(s);
-            return;
-        }
-        if (tts == null) return;
-        try {
-            tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "r");
-        } catch (Exception ignored) {
-        }
+        if (!soundOn || s == null || s.isEmpty()) return;
+        if (langEn) speakEn(s);
+        else playEn(ZhSpeech.ids(s));
     }
 
     /** 英文用内置音频按词播放，不依赖系统语音包 */
     private void speakEn(String text) {
-        if (text == null || text.isEmpty()) return;
-        java.util.List<Integer> ids = new java.util.ArrayList<>();
-        for (String tok : text.toLowerCase(java.util.Locale.US).split("\\s+")) {
-            if (tok.isEmpty()) continue;
-            if (tok.matches("-?[0-9]+(\\.[0-9]+)?")) {
-                String words = EnSpeech.words(Double.parseDouble(tok));
-                for (String w : words.split(" ")) {
-                    int id = EnSpeech.rawOf(w);
-                    if (id != 0) ids.add(id);
-                }
-            } else {
-                String clean = tok.replaceAll("[^a-z]", "");
-                int id = EnSpeech.rawOf(clean);
-                if (id != 0) ids.add(id);
-            }
-        }
-        playEn(ids);
+        playEn(EnSpeech.ids(text));
     }
 
     private final java.util.HashMap<Integer, byte[]> enPcm = new java.util.HashMap<>();

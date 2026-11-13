@@ -33,6 +33,25 @@ public final class EnSpeech {
         return 0;
     }
 
+    /** 英文文本 -> 音频 id 列表 */
+    public static java.util.List<Integer> ids(String text) {
+        java.util.List<Integer> out = new java.util.ArrayList<>();
+        if (text == null) return out;
+        for (String tok : text.toLowerCase(java.util.Locale.US).split("\\s+")) {
+            if (tok.isEmpty()) continue;
+            if (tok.matches("-?[0-9]+(\\.[0-9]+)?")) {
+                for (String w : words(Double.parseDouble(tok)).split(" ")) {
+                    int id = rawOf(w);
+                    if (id != 0) out.add(id);
+                }
+            } else {
+                int id = rawOf(tok.replaceAll("[^a-z]", ""));
+                if (id != 0) out.add(id);
+            }
+        }
+        return out;
+    }
+
     /** 数字转英文单词序列，例如 56 -> "fifty six" */
     public static String words(double v) {
         StringBuilder b = new StringBuilder();
