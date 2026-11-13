@@ -596,6 +596,11 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         if ("LANG".equals(k)) {
             langEn = !langEn;
             saveLang();
+            stopEn();
+            try {
+                if (tts != null) tts.stop();
+            } catch (Throwable ignored) {
+            }
             if (vListening) stopVosk();
             if (vModel != null) {
                 try {
