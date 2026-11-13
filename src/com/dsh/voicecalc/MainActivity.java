@@ -143,7 +143,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         boolean land = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE;
         btnSound.setText(land
-                ? S(soundOn ? "人声" : "静音", soundOn ? "Sound" : "Muted")
+                ? S(soundOn ? "人声" : "静音", soundOn ? "Snd" : "Mute")
                 : S(soundOn ? "🔊 人声：开" : "🔇 人声：关",
                     soundOn ? "🔊 Sound: on" : "🔇 Sound: off"));
         btnSound.setTextColor(soundOn ? 0xFF3BE0C8 : 0xFF8A8AA3);
@@ -184,7 +184,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         btnLang.setOnClickListener(this);
 
         btnAbout = new TextView(this);
-        btnAbout.setText(S("关于", "About"));
+        btnAbout.setText(S("关于", langEn && getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE ? "Info" : "About"));
         btnAbout.setTag("ABOUT");
         btnAbout.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnAbout.setPadding(dp(12), dp(7), dp(12), dp(7));
@@ -194,7 +195,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         btnAbout.setOnClickListener(this);
 
         btnHist = new TextView(this);
-        btnHist.setText(S("记录", "History"));
+        btnHist.setText(S("记录", getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE ? "Log" : "History"));
         btnHist.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnHist.setPadding(dp(12), dp(7), dp(12), dp(7));
         btnHist.setBackgroundResource(R.drawable.bg_key);
@@ -546,7 +548,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     }
 
     private void attrKeyStyle(TextView v) {
-        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         v.setSingleLine(true);
         v.setPadding(0, 0, 0, 0);
         v.setGravity(Gravity.CENTER);
@@ -1277,13 +1279,34 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private void applyTtsLang() {
         if (tts == null) return;
         java.util.Locale loc = langEn ? java.util.Locale.US : java.util.Locale.CHINA;
+        boolean ok = false;
+        // 先按音色挑：系统里装了英文音色就一定能念英文
+        try {
+            java.util.Set<android.speech.tts.Voice> voices = tts.getVoices();
+            if (voices != null) {
+                for (android.speech.tts.Voice v : voices) {
+                    java.util.Locale vl = v.getLocale();
+                    if (vl == null) continue;
+                    String lang = vl.getLanguage();
+                    boolean match = langEn ? "en".equals(lang) : "zh".equals(lang);
+                    if (match && !v.isNetworkConnectionRequired()) {
+                        if (tts.setVoice(v) == TextToSpeech.SUCCESS) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         int r;
         try {
-            r = tts.setLanguage(loc);
+            r = ok ? TextToSpeech.SUCCESS : tts.setLanguage(loc);
         } catch (Throwable t) {
             r = -3;
         }
-        if (langEn && r < TextToSpeech.LANG_AVAILABLE) {
+        if (r >= TextToSpeech.LANG_AVAILABLE) ok = true;
+        if (langEn && !ok) {
             if (!warnedNoEnTts) {
                 warnedNoEnTts = true;
                 runOnUiThread(new Runnable() {
