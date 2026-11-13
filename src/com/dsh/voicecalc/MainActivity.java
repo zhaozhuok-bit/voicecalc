@@ -94,6 +94,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         density = getResources().getDisplayMetrics().density;
         setContentView(buildUi());
         updateSoundUi();
+        initTts();
         langEn = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("lang_en", false);
         hist = new HistoryDb(this);
         hist.prune();
@@ -133,7 +134,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             if (w != null) speakEn(w);
             return;
         }
-        String say = null;
+        if (tts == null) return;
+        String say;
         if (label.length() == 1 && c >= '0' && c <= '9') {
             say = String.valueOf("零一二三四五六七八九".charAt(c - '0'));
         } else {
@@ -149,7 +151,11 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 default: return;
             }
         }
-        speak(say);
+        try {
+            tts.setLanguage(Locale.CHINA);
+            tts.speak(say, TextToSpeech.QUEUE_FLUSH, null, "k");
+        } catch (Throwable ignored) {
+        }
     }
 
     private void updateSoundUi() {
@@ -930,7 +936,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         try {
             double v = Calc.eval(e);
             showResult(v);
-            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于" + ZhSpeech.words(v)));
+            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于 " + Calc.fmt(v)));
             hist.add(pretty(e), Calc.fmt(v));
             justEvaluated = true;
         } catch (ArithmeticException ex) {
@@ -1279,7 +1285,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             tvExpr.setText(pretty(e));
             showResult(v);
             tvStatus.setText("听到：" + text);
-            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于" + ZhSpeech.words(v)));
+            speak(langEn ? ("equals " + Calc.fmt(v)) : ("等于 " + Calc.fmt(v)));
             justEvaluated = true;
             hist.add(pretty(e), Calc.fmt(v));
         } catch (ArithmeticException ex) {
@@ -1375,8 +1381,16 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
     private void speak(String s) {
         if (!soundOn || s == null || s.isEmpty()) return;
-        if (langEn) speakEn(s);
-        else playEn(ZhSpeech.ids(s));
+        if (langEn) {
+            speakEn(s);
+            return;
+        }
+        if (tts == null) return;
+        try {
+            tts.setLanguage(Locale.CHINA);
+            tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "r");
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 英文用内置音频按词播放，不依赖系统语音包 */
