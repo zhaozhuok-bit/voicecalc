@@ -71,6 +71,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private boolean langEn = false;
     private boolean vModelLang = false;
     private boolean warnedNoEnTts = false;
+    private NeuralTts neuralTts;
 
     private String S(String zh, String en) {
         return langEn ? en : zh;
@@ -95,6 +96,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         setContentView(buildUi());
         updateSoundUi();
         langEn = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean("lang_en", false);
+        neuralTts = new NeuralTts(this);
         hist = new HistoryDb(this);
         hist.prune();
         initTone();
@@ -1375,6 +1377,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
     private void speak(String s) {
         if (!soundOn || s == null || s.isEmpty()) return;
+        if (neuralTts != null && neuralTts.speak(s, langEn)) return;
         if (langEn) speakEn(s);
         else playEn(ZhSpeech.ids(s));
     }

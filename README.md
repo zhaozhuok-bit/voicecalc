@@ -62,6 +62,7 @@
 | JNA 5.13.0 | Vosk 的 JNI 调用层 | `vosk/jna/` |
 | vosk-model-small-cn-0.22 | 中文模型（42MB） | `assets/model/` |
 | vosk-model-small-en-us-0.15 | 英文模型（40MB） | `assets/model_en/` |
+| sherpa-onnx + Piper VITS | 中英神经语音合成（约 55MB） | `assets/tts-en/`、`assets/tts-zh/` |
 | Android SDK platform 34 + build-tools 34 | 编译工具 | `sdk/` |
 
 > 模型和 SDK 不进仓库（体积原因），首次构建用 `download-deps.sh` 自动获取。

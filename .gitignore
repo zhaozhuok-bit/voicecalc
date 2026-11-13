@@ -18,3 +18,13 @@ keystore/
 # 备份/临时
 *.bak
 *.log
+
+# 语音模型（体积大，用工具脚本生成/下载）
+assets/tts-en/
+assets/tts-zh/
+piper/
+ttsdl/
+sherpa/
+jniLibs/
+zh_int8.onnx
+tts_zh_tokens.txt
