@@ -70,6 +70,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private TextView btnLang;
     private boolean langEn = false;
     private boolean vModelLang = false;
+    private boolean warnedNoEnTts = false;
 
     private String S(String zh, String en) {
         return langEn ? en : zh;
@@ -574,12 +575,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         if ("LANG".equals(k)) {
             langEn = !langEn;
             saveLang();
-            if (tts != null) {
-                try {
-                    tts.setLanguage(langEn ? java.util.Locale.US : java.util.Locale.CHINA);
-                } catch (Throwable ignored) {
-                }
-            }
+            applyTtsLang();
             if (vListening) stopVosk();
             if (vModel != null) {
                 try {
@@ -1278,17 +1274,59 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
     // ---------------- TTS ----------------
 
+    private void applyTtsLang() {
+        if (tts == null) return;
+        java.util.Locale loc = langEn ? java.util.Locale.US : java.util.Locale.CHINA;
+        int r;
+        try {
+            r = tts.setLanguage(loc);
+        } catch (Throwable t) {
+            r = -3;
+        }
+        if (langEn && r < TextToSpeech.LANG_AVAILABLE) {
+            if (!warnedNoEnTts) {
+                warnedNoEnTts = true;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            new AlertDialog.Builder(MainActivity.this)
+                                    .setTitle(S("缺少英文语音包", "English voice missing"))
+                                    .setMessage(S("系统里没有安装英文语音，英文界面下的朗读仍会带中文口音。\n\n"
+                                                    + "去「设置 → 语音合成」安装一个英文语音包（如 Google 语音服务）后即可正常朗读。",
+                                            "No English TTS voice is installed, so spoken output will still sound Chinese.\n\n"
+                                                    + "Open Settings -> Text-to-speech and install an English voice."))
+                                    .setPositiveButton(S("打开语音设置", "Open TTS settings"),
+                                            new android.content.DialogInterface.OnClickListener() {
+                                                @Override
+                                                public void onClick(android.content.DialogInterface d, int w) {
+                                                    try {
+                                                        startActivity(new Intent("com.android.settings.TTS_SETTINGS"));
+                                                    } catch (Throwable ignored) {
+                                                        try {
+                                                            startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
+                                                        } catch (Throwable ignored2) {
+                                                        }
+                                                    }
+                                                }
+                                            })
+                                    .setNegativeButton(S("知道了", "OK"), null)
+                                    .show();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     private void initTts() {
         tts = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
-                    try {
-                        tts.setLanguage(langEn ? Locale.US : Locale.CHINA);
-                    } catch (Throwable ignored) {
-                        tts.setLanguage(Locale.CHINA);
-                    }
                     tts.setSpeechRate(1.05f);
+                    applyTtsLang();
                 }
             }
         });
