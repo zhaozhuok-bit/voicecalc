@@ -71,9 +71,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private boolean langEn = false;
     private boolean vModelLang = false;
     private boolean warnedNoEnTts = false;
-    private android.media.MediaPlayer enPlayer;
-    private final java.util.ArrayList<Integer> enQueue = new java.util.ArrayList<>();
-    private int enAt = 0;
 
     private String S(String zh, String en) {
         return langEn ? en : zh;
@@ -1413,51 +1410,91 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         playEn(ids);
     }
 
-    private void playEn(java.util.List<Integer> ids) {
-        stopEn();
-        enQueue.clear();
-        enQueue.addAll(ids);
-        enAt = 0;
-        nextEn();
+    private final java.util.HashMap<Integer, byte[]> enPcm = new java.util.HashMap<>();
+    private Thread enThread;
+    private android.media.AudioTrack enTrack;
+
+    private byte[] pcmOf(int resId) {
+        byte[] cached = enPcm.get(resId);
+        if (cached != null) return cached;
+        try {
+            InputStream in = getResources().openRawResource(resId);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            byte[] all = bos.toByteArray();
+            int off = -1;
+            for (int i = 0; i + 4 <= all.length; i++) {
+                if (all[i] == 'd' && all[i + 1] == 'a' && all[i + 2] == 't' && all[i + 3] == 'a') {
+                    off = i + 8;
+                    break;
+                }
+            }
+            byte[] pcm = (off > 0 && off < all.length)
+                    ? java.util.Arrays.copyOfRange(all, off, all.length) : all;
+            enPcm.put(resId, pcm);
+            return pcm;
+        } catch (Throwable t) {
+            return new byte[0];
+        }
     }
 
-    private void nextEn() {
-        if (enAt >= enQueue.size()) {
-            stopEn();
-            return;
+    private void playEn(java.util.List<Integer> ids) {
+        stopEn();
+        if (ids.isEmpty()) return;
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] gap = new byte[22050 / 40];   // 25ms 静音
+        for (int id : ids) {
+            byte[] p = pcmOf(id);
+            out.write(p, 0, p.length);
+            out.write(gap, 0, gap.length);
         }
-        int id = enQueue.get(enAt++);
-        try {
-            enPlayer = android.media.MediaPlayer.create(this, id);
-            if (enPlayer == null) {
-                nextEn();
-                return;
-            }
-            enPlayer.setOnCompletionListener(new android.media.MediaPlayer.OnCompletionListener() {
-                @Override
-                public void onCompletion(android.media.MediaPlayer mp) {
-                    try {
-                        mp.release();
-                    } catch (Throwable ignored) {
+        final byte[] data = out.toByteArray();
+        final int rate = 22050;
+        enThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    int min = android.media.AudioTrack.getMinBufferSize(rate,
+                            android.media.AudioFormat.CHANNEL_OUT_MONO,
+                            android.media.AudioFormat.ENCODING_PCM_16BIT);
+                    enTrack = new android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC,
+                            rate, android.media.AudioFormat.CHANNEL_OUT_MONO,
+                            android.media.AudioFormat.ENCODING_PCM_16BIT,
+                            Math.max(min, data.length), android.media.AudioTrack.MODE_STREAM);
+                    enTrack.play();
+                    int off = 0;
+                    while (off < data.length && !Thread.currentThread().isInterrupted()) {
+                        int w = enTrack.write(data, off, data.length - off);
+                        if (w <= 0) break;
+                        off += w;
                     }
-                    if (enPlayer == mp) enPlayer = null;
-                    nextEn();
+                } catch (Throwable ignored) {
                 }
-            });
-            enPlayer.start();
-        } catch (Throwable t) {
-            nextEn();
-        }
+            }
+        });
+        enThread.start();
     }
 
     private void stopEn() {
         try {
-            if (enPlayer != null) {
-                enPlayer.release();
-                enPlayer = null;
+            if (enThread != null) {
+                enThread.interrupt();
+                enThread = null;
             }
         } catch (Throwable ignored) {
         }
+        try {
+            if (enTrack != null) {
+                enTrack.pause();
+                enTrack.flush();
+                enTrack.release();
+            }
+        } catch (Throwable ignored) {
+        }
+        enTrack = null;
     }
 
     @Override
