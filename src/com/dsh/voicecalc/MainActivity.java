@@ -1416,8 +1416,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     }
 
     private final java.util.HashMap<Integer, byte[]> enPcm = new java.util.HashMap<>();
-    private Thread enThread;
-    private android.media.AudioTrack enTrack;
+    private android.media.MediaPlayer enMp;
 
     private byte[] pcmOf(int resId) {
         byte[] cached = enPcm.get(resId);
@@ -1438,7 +1437,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 }
             }
             byte[] pcm = (off > 0 && off < all.length)
-                    ? java.util.Arrays.copyOfRange(all, off, all.length) : all;
+                    ? java.util.Arrays.copyOfRange(all, off, all.length) : new byte[0];
             enPcm.put(resId, pcm);
             return pcm;
         } catch (Throwable t) {
@@ -1446,60 +1445,83 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         }
     }
 
+    private static void le32(java.io.OutputStream o, int v) throws java.io.IOException {
+        o.write(v & 0xFF);
+        o.write((v >> 8) & 0xFF);
+        o.write((v >> 16) & 0xFF);
+        o.write((v >> 24) & 0xFF);
+    }
+
+    private static void le16(java.io.OutputStream o, int v) throws java.io.IOException {
+        o.write(v & 0xFF);
+        o.write((v >> 8) & 0xFF);
+    }
+
     private void playEn(java.util.List<Integer> ids) {
         stopEn();
         if (ids.isEmpty()) return;
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        byte[] gap = new byte[22050 / 40];   // 25ms 静音
-        for (int id : ids) {
-            byte[] p = pcmOf(id);
-            out.write(p, 0, p.length);
-            out.write(gap, 0, gap.length);
-        }
-        final byte[] data = out.toByteArray();
-        final int rate = 22050;
-        enThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    int min = android.media.AudioTrack.getMinBufferSize(rate,
-                            android.media.AudioFormat.CHANNEL_OUT_MONO,
-                            android.media.AudioFormat.ENCODING_PCM_16BIT);
-                    enTrack = new android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC,
-                            rate, android.media.AudioFormat.CHANNEL_OUT_MONO,
-                            android.media.AudioFormat.ENCODING_PCM_16BIT,
-                            Math.max(min, data.length), android.media.AudioTrack.MODE_STREAM);
-                    enTrack.play();
-                    int off = 0;
-                    while (off < data.length && !Thread.currentThread().isInterrupted()) {
-                        int w = enTrack.write(data, off, data.length - off);
-                        if (w <= 0) break;
-                        off += w;
-                    }
-                } catch (Throwable ignored) {
-                }
+        try {
+            java.io.ByteArrayOutputStream pcm = new java.io.ByteArrayOutputStream();
+            byte[] gap = new byte[22050 / 50];   // 20ms 静音
+            for (int id : ids) {
+                byte[] p = pcmOf(id);
+                pcm.write(p, 0, p.length);
+                pcm.write(gap, 0, gap.length);
             }
-        });
-        enThread.start();
+            byte[] data = pcm.toByteArray();
+            final File f = new File(getCacheDir(), "say_en.wav");
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(f);
+            fos.write("RIFF".getBytes("US-ASCII"));
+            le32(fos, 36 + data.length);
+            fos.write("WAVEfmt ".getBytes("US-ASCII"));
+            le32(fos, 16);
+            le16(fos, 1);
+            le16(fos, 1);
+            le32(fos, 22050);
+            le32(fos, 44100);
+            le16(fos, 2);
+            le16(fos, 16);
+            fos.write("data".getBytes("US-ASCII"));
+            le32(fos, data.length);
+            fos.write(data);
+            fos.close();
+
+            enMp = new android.media.MediaPlayer();
+            enMp.setDataSource(f.getAbsolutePath());
+            enMp.setOnPreparedListener(new android.media.MediaPlayer.OnPreparedListener() {
+                @Override
+                public void onPrepared(android.media.MediaPlayer mp) {
+                    try {
+                        mp.start();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+            enMp.setOnCompletionListener(new android.media.MediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(android.media.MediaPlayer mp) {
+                    try {
+                        mp.release();
+                    } catch (Throwable ignored) {
+                    }
+                    if (enMp == mp) enMp = null;
+                    f.delete();
+                }
+            });
+            enMp.prepareAsync();
+        } catch (Throwable t) {
+        }
     }
 
     private void stopEn() {
         try {
-            if (enThread != null) {
-                enThread.interrupt();
-                enThread = null;
+            if (enMp != null) {
+                enMp.stop();
+                enMp.release();
             }
         } catch (Throwable ignored) {
         }
-        try {
-            if (enTrack != null) {
-                enTrack.pause();
-                enTrack.flush();
-                enTrack.release();
-            }
-        } catch (Throwable ignored) {
-        }
-        enTrack = null;
+        enMp = null;
     }
 
     @Override
