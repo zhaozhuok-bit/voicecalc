@@ -71,6 +71,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private boolean langEn = false;
     private boolean vModelLang = false;
     private boolean warnedNoEnTts = false;
+    private android.media.MediaPlayer enPlayer;
+    private final java.util.ArrayList<Integer> enQueue = new java.util.ArrayList<>();
+    private int enAt = 0;
 
     private String S(String zh, String en) {
         return langEn ? en : zh;
@@ -111,14 +114,33 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
 
     /** 按键人声：数字读成中文数字，符号读名称；关掉开关就完全安静 */
     private void speakKey(String label) {
-        if (!soundOn || tts == null || label == null || label.isEmpty()) return;
-        String say;
+        if (!soundOn || label == null || label.isEmpty()) return;
         char c = label.charAt(0);
+        if (langEn) {
+            String w = null;
+            if (label.length() == 1 && c >= '0' && c <= '9') {
+                w = new String[]{"zero", "one", "two", "three", "four",
+                        "five", "six", "seven", "eight", "nine"}[c - '0'];
+            } else {
+                switch (label) {
+                    case ".": w = "point"; break;
+                    case "+": w = "plus"; break;
+                    case "−": w = "minus"; break;
+                    case "×": w = "times"; break;
+                    case "÷": w = "divided by"; break;
+                    case "%": w = "percent"; break;
+                    case "C": w = "clear"; break;
+                    case "⌫": w = "delete"; break;
+                    default: break;
+                }
+            }
+            if (w != null) speakEn(w);
+            return;
+        }
+        if (tts == null) return;
+        String say;
         if (label.length() == 1 && c >= '0' && c <= '9') {
-            say = langEn
-                    ? new String[]{"zero", "one", "two", "three", "four",
-                                   "five", "six", "seven", "eight", "nine"}[c - '0']
-                    : String.valueOf("零一二三四五六七八九".charAt(c - '0'));
+            say = String.valueOf("零一二三四五六七八九".charAt(c - '0'));
         } else {
             switch (label) {
                 case ".": say = S("点", "point"); break;
@@ -577,7 +599,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         if ("LANG".equals(k)) {
             langEn = !langEn;
             saveLang();
-            applyTtsLang();
             if (vListening) stopVosk();
             if (vModel != null) {
                 try {
@@ -1348,18 +1369,94 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             @Override
             public void onInit(int status) {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
+                    try {
+                        tts.setLanguage(Locale.CHINA);
+                    } catch (Throwable ignored) {
+                    }
                     tts.setSpeechRate(1.05f);
-                    applyTtsLang();
                 }
             }
         });
     }
 
     private void speak(String s) {
-        if (!soundOn || tts == null) return;
+        if (!soundOn) return;
+        if (langEn) {
+            speakEn(s);
+            return;
+        }
+        if (tts == null) return;
         try {
             tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "r");
         } catch (Exception ignored) {
+        }
+    }
+
+    /** 英文用内置音频按词播放，不依赖系统语音包 */
+    private void speakEn(String text) {
+        if (text == null || text.isEmpty()) return;
+        java.util.List<Integer> ids = new java.util.ArrayList<>();
+        for (String tok : text.toLowerCase(java.util.Locale.US).split("\\s+")) {
+            if (tok.isEmpty()) continue;
+            if (tok.matches("-?[0-9]+(\\.[0-9]+)?")) {
+                String words = EnSpeech.words(Double.parseDouble(tok));
+                for (String w : words.split(" ")) {
+                    int id = EnSpeech.rawOf(w);
+                    if (id != 0) ids.add(id);
+                }
+            } else {
+                String clean = tok.replaceAll("[^a-z]", "");
+                int id = EnSpeech.rawOf(clean);
+                if (id != 0) ids.add(id);
+            }
+        }
+        playEn(ids);
+    }
+
+    private void playEn(java.util.List<Integer> ids) {
+        stopEn();
+        enQueue.clear();
+        enQueue.addAll(ids);
+        enAt = 0;
+        nextEn();
+    }
+
+    private void nextEn() {
+        if (enAt >= enQueue.size()) {
+            stopEn();
+            return;
+        }
+        int id = enQueue.get(enAt++);
+        try {
+            enPlayer = android.media.MediaPlayer.create(this, id);
+            if (enPlayer == null) {
+                nextEn();
+                return;
+            }
+            enPlayer.setOnCompletionListener(new android.media.MediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(android.media.MediaPlayer mp) {
+                    try {
+                        mp.release();
+                    } catch (Throwable ignored) {
+                    }
+                    if (enPlayer == mp) enPlayer = null;
+                    nextEn();
+                }
+            });
+            enPlayer.start();
+        } catch (Throwable t) {
+            nextEn();
+        }
+    }
+
+    private void stopEn() {
+        try {
+            if (enPlayer != null) {
+                enPlayer.release();
+                enPlayer = null;
+            }
+        } catch (Throwable ignored) {
         }
     }
 

@@ -92,7 +92,7 @@
 
 编译好的 APK 放在 [`dist/`](dist/) 目录：
 
-- `dist/VoiceCalc-v3.12.apk`（约 88MB，内置中英双语离线模型）
+- `dist/VoiceCalc-v3.17.apk`（约 89MB，内置中英双语模型 + 英文发音音频）
 
 ## 许可
 
