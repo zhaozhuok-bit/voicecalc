@@ -101,23 +101,29 @@ public final class NeuralTts {
         }
     }
 
-    /** 后台合成并播放；返回 false 表示不可用（调用方可回退） */
-    public boolean speak(final String text, final boolean english) {
-        if (text == null || text.trim().isEmpty()) return false;
+    /** 后台合成并播放；失败时回调 onFail 让调用方回退 */
+    public void speak(final String text, final boolean english, final Runnable onFail) {
+        if (text == null || text.trim().isEmpty()) return;
         final String say = text.trim();
         new Thread(new Runnable() {
             @Override
             public void run() {
+                boolean ok = false;
                 try {
                     OfflineTts t = get(english);
-                    if (t == null) return;
-                    GeneratedAudio audio = t.generate(say, 0, 1.0f);
-                    play(audio.getSamples(), audio.getSampleRate());
+                    if (t != null) {
+                        GeneratedAudio audio = t.generate(say, 0, 1.0f);
+                        if (audio != null && audio.getSamples() != null
+                                && audio.getSamples().length > 0) {
+                            play(audio.getSamples(), audio.getSampleRate());
+                            ok = true;
+                        }
+                    }
                 } catch (Throwable ignored) {
                 }
+                if (!ok && onFail != null) onFail.run();
             }
         }, "tts").start();
-        return true;
     }
 
     private void play(float[] samples, int rate) {

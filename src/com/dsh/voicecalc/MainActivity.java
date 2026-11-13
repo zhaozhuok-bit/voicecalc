@@ -151,7 +151,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 default: return;
             }
         }
-        playEn(ZhSpeech.ids(say));
+        speak(say);
     }
 
     private void updateSoundUi() {
@@ -1375,9 +1375,23 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
         });
     }
 
-    private void speak(String s) {
+    private void speak(final String s) {
         if (!soundOn || s == null || s.isEmpty()) return;
-        if (neuralTts != null && neuralTts.speak(s, langEn)) return;
+        if (neuralTts != null) {
+            neuralTts.speak(s, langEn, new Runnable() {
+                @Override
+                public void run() {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (langEn) speakEn(s);
+                            else playEn(ZhSpeech.ids(s));
+                        }
+                    });
+                }
+            });
+            return;
+        }
         if (langEn) speakEn(s);
         else playEn(ZhSpeech.ids(s));
     }
