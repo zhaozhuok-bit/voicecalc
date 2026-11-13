@@ -13,8 +13,137 @@ public final class Parser {
     private Parser() {
     }
 
+    private static final String[] EN_ONES = {
+            "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+            "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+            "seventeen", "eighteen", "nineteen"
+    };
+    private static final String[] EN_TENS = {
+            "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+    };
+
+    /** 英文口算：thirty two plus fifty eight */
+    private static String englishExpression(String raw) {
+        String t = raw.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9 ]", " ").trim();
+        String[] words = t.isEmpty() ? new String[0] : t.split("\\s+");
+        StringBuilder out = new StringBuilder();
+        java.util.List<String> group = new java.util.ArrayList<>();
+        for (String tok : words) {
+            switch (tok) {
+                case "plus":
+                case "add":
+                    flush(out, group);
+                    out.append('+');
+                    break;
+                case "minus":
+                case "subtract":
+                    flush(out, group);
+                    out.append('-');
+                    break;
+                case "times":
+                case "multiplied":
+                case "multiply":
+                case "x":
+                    flush(out, group);
+                    out.append('*');
+                    break;
+                case "divided":
+                case "divide":
+                case "over":
+                    flush(out, group);
+                    out.append('/');
+                    break;
+                case "percent":
+                    flush(out, group);
+                    out.append("/100");
+                    break;
+                case "by":
+                case "and":
+                case "equals":
+                case "equal":
+                case "is":
+                case "what":
+                case "whats":
+                case "the":
+                case "calculate":
+                case "please":
+                case "answer":
+                case "how":
+                case "much":
+                case "result":
+                case "of":
+                case "a":
+                    break;
+                default:
+                    group.add(tok);
+                    break;
+            }
+        }
+        flush(out, group);
+        String s = out.toString();
+        if (s.isEmpty()) throw new IllegalArgumentException("empty");
+        if (!s.matches("[0-9.+\\-*/()]+")) throw new IllegalArgumentException("chars");
+        return s;
+    }
+
+    private static void flush(StringBuilder out, java.util.List<String> group) {
+        if (group.isEmpty()) return;
+        out.append(parseEnglishNumber(group));
+        group.clear();
+    }
+
+    private static String parseEnglishNumber(java.util.List<String> g) {
+        long total = 0, cur = 0;
+        StringBuilder dec = null;
+        for (String s : g) {
+            if ("point".equals(s)) {
+                dec = new StringBuilder();
+                continue;
+            }
+            if (dec != null) {
+                int d = oneVal(s);
+                if (d >= 0) dec.append(d);
+                continue;
+            }
+            if ("hundred".equals(s)) {
+                if (cur == 0) cur = 1;
+                cur *= 100;
+                continue;
+            }
+            if ("thousand".equals(s)) {
+                total += Math.max(cur, 1) * 1000;
+                cur = 0;
+                continue;
+            }
+            if ("million".equals(s)) {
+                total += Math.max(cur, 1) * 1000000;
+                cur = 0;
+                continue;
+            }
+            int v = wordVal(s);
+            if (v >= 0) cur += v;
+        }
+        long val = total + cur;
+        if (dec != null && dec.length() > 0) return val + "." + dec;
+        return String.valueOf(val);
+    }
+
+    private static int oneVal(String s) {
+        for (int i = 0; i < EN_ONES.length; i++) if (EN_ONES[i].equals(s)) return i;
+        return -1;
+    }
+
+    private static int wordVal(String s) {
+        int v = oneVal(s);
+        if (v >= 0) return v;
+        for (int i = 2; i < EN_TENS.length; i++) if (EN_TENS[i].equals(s)) return i * 10;
+        return -1;
+    }
+
+
     public static String toExpression(String raw) {
         if (raw == null) throw new IllegalArgumentException("empty");
+        if (raw.matches(".*[A-Za-z].*")) return englishExpression(raw);
         String t = widen(raw);
         t = t.replaceAll("[\\s,，。、！？!?；;：:'\"“”‘’]", "");
         for (String f : FILLERS) t = t.replace(f, "");

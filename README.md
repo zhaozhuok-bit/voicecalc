@@ -12,7 +12,7 @@
 - 📜 计算记录：保留最近 30 天，可点击回填
 - 🔄 横竖屏自适应：竖屏单键盘，横屏左右手分工（左＝显示+运算，右＝数字+等于+语音）
 - ⌨️ 外接键盘（USB / 蓝牙）：数字、四则运算、回车＝等于、退格、Esc＝清空，按键时屏幕同步高亮＋发声
-- 🌐 中英文界面切换（右上角 EN / 中）
+- 🌐 中英文切换（EN / 中）：界面、按键发音、结果朗读、语音输入都跟着换语言
 - 🔊 按键人声可开关，设置会记住
 
 
@@ -36,7 +36,7 @@
 ## 常见问题
 
 **为什么装完有 47MB？**
-内置了离线语音模型（约 42MB），所以不联网也能识别，也不会把你的语音发到任何服务器。
+内置了中文和英文两套离线语音模型（合计约 80MB），所以不联网也能识别，也不会把语音发到任何服务器。
 
 **为什么不用系统自带语音识别？**
 国内不少机型（ColorOS、HarmonyOS 等无 Google 服务的系统）根本没有 `RecognitionService`，
@@ -60,7 +60,8 @@
 |---|---|---|
 | Vosk Android 0.3.47 | 离线语音识别引擎 | `vosk/aar/` |
 | JNA 5.13.0 | Vosk 的 JNI 调用层 | `vosk/jna/` |
-| vosk-model-small-cn-0.22 | 中文声学模型（42MB） | `assets/model/` |
+| vosk-model-small-cn-0.22 | 中文模型（42MB） | `assets/model/` |
+| vosk-model-small-en-us-0.15 | 英文模型（40MB） | `assets/model_en/` |
 | Android SDK platform 34 + build-tools 34 | 编译工具 | `sdk/` |
 
 > 模型和 SDK 不进仓库（体积原因），首次构建用 `download-deps.sh` 自动获取。
@@ -91,7 +92,7 @@
 
 编译好的 APK 放在 [`dist/`](dist/) 目录：
 
-- `dist/VoiceCalc-v3.10.apk`（约 47MB，内置离线模型）
+- `dist/VoiceCalc-v3.12.apk`（约 88MB，内置中英双语离线模型）
 
 ## 许可
 

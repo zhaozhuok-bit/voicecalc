@@ -51,6 +51,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private AudioRecord vAudio;
     private volatile boolean vListening;
     private volatile String vPartial = "";
+    private static final String GRAMMAR_EN = "[\"zero\",\"one\",\"two\",\"three\",\"four\",\"five\","
+            + "\"six\",\"seven\",\"eight\",\"nine\",\"ten\",\"eleven\",\"twelve\",\"thirteen\","
+            + "\"fourteen\",\"fifteen\",\"sixteen\",\"seventeen\",\"eighteen\",\"nineteen\","
+            + "\"twenty\",\"thirty\",\"forty\",\"fifty\",\"sixty\",\"seventy\",\"eighty\",\"ninety\","
+            + "\"hundred\",\"thousand\",\"million\",\"point\",\"plus\",\"minus\",\"times\","
+            + "\"divided\",\"by\",\"over\",\"equals\",\"percent\",\"and\",\"a\"]";
+
     private static final String GRAMMAR = "[\"零\",\"一\",\"二\",\"三\",\"四\",\"五\",\"六\",\"七\",\"八\",\"九\",\"十\",\"百\",\"千\",\"万\",\"亿\",\"点\",\"加\",\"减\",\"乘\",\"除\",\"以\",\"等\",\"于\",\"多\",\"少\",\"负\",\"分\",\"之\",\"的\"]";
     private final StringBuilder input = new StringBuilder();
     private boolean justEvaluated = false;
@@ -62,6 +69,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
     private TextView btnAbout;
     private TextView btnLang;
     private boolean langEn = false;
+    private boolean vModelLang = false;
 
     private String S(String zh, String en) {
         return langEn ? en : zh;
@@ -572,6 +580,15 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
                 } catch (Throwable ignored) {
                 }
             }
+            if (vListening) stopVosk();
+            if (vModel != null) {
+                try {
+                    vModel.close();
+                } catch (Throwable ignored) {
+                }
+                vModel = null;
+                vRec = null;
+            }
             String keep = input.toString();
             String res = tvResult != null ? tvResult.getText().toString() : "0";
             keyViews.clear();
@@ -980,12 +997,14 @@ public class MainActivity extends Activity implements View.OnClickListener, Reco
             @Override
             public void run() {
                 try {
-                    File dir = new File(getFilesDir(), "model");
+                    final String assetName = langEn ? "model_en" : "model";
+                    File dir = new File(getFilesDir(), assetName);
                     if (!new File(dir, "am/final.mdl").exists()) {
-                        copyAssets("model", dir);
+                        copyAssets(assetName, dir);
                     }
                     vModel = new org.vosk.Model(dir.getAbsolutePath());
-                    vRec = new org.vosk.Recognizer(vModel, 16000f, GRAMMAR);
+                    vRec = new org.vosk.Recognizer(vModel, 16000f, langEn ? GRAMMAR_EN : GRAMMAR);
+                    vModelLang = langEn;
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
